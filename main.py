@@ -396,6 +396,7 @@ class ExamPanel(wx.Panel):
         self.check_boxes = []
         self.questions = []
         self.asked_question_ids = set()  # Множество ID заданных вопросов
+        self.available_question_ids = set()  # Множество ID доступных вопросов
         self.init_ui()
         self.load_questions()
 
@@ -448,36 +449,55 @@ class ExamPanel(wx.Panel):
         """Загрузка всех вопросов из базы данных"""
         self.main_window.cursor.execute("SELECT * FROM questions")
         self.questions = self.main_window.cursor.fetchall()
+
+        # Создаем множество ID всех доступных вопросов
+        self.available_question_ids = {q[0] for q in self.questions}
         self.asked_question_ids = set()  # Сбрасываем множество заданных вопросов
+
         self.load_question()
 
     def reload_questions(self):
         """Перезагрузка вопросов из базы данных"""
         self.main_window.cursor.execute("SELECT * FROM questions")
         self.questions = self.main_window.cursor.fetchall()
+
+        # Обновляем множество доступных вопросов
+        self.available_question_ids = {q[0] for q in self.questions}
         # Не сбрасываем asked_question_ids, чтобы продолжить текущую сессию
+
         self.load_question()
 
-    def get_available_questions(self):
-        """Получение списка вопросов, которые еще не были заданы в текущей сессии"""
-        return [q for q in self.questions if q[0] not in self.asked_question_ids]
+    def get_random_question(self):
+        """Получение случайного вопроса из доступных"""
+        if not self.available_question_ids:
+            return None
+
+        # Выбираем случайный ID из доступных вопросов
+        random_id = random.choice(list(self.available_question_ids))
+
+        # Находим вопрос по ID
+        for question in self.questions:
+            if question[0] == random_id:
+                return question
+
+        return None
 
     def load_question(self):
         """Загрузка случайного вопроса из доступных вопросов"""
         self.clear_options()
 
-        available_questions = self.get_available_questions()
+        # Получаем случайный вопрос
+        self.current_question = self.get_random_question()
 
-        if not available_questions:
-            # Все вопросы были заданы
+        if self.current_question is None:
+            # Все вопросы были заданы или нет доступных вопросов
             self.show_session_complete()
             return
 
-        # Выбираем случайный вопрос из доступных
-        self.current_question = random.choice(available_questions)
-
-        # Добавляем ID вопроса в множество заданных
-        self.asked_question_ids.add(self.current_question[0])
+        # Удаляем ID вопроса из доступных и добавляем в заданные
+        question_id = self.current_question[0]
+        self.available_question_ids.discard(question_id)
+        self.asked_question_ids.add(question_id)
 
         # Собираем все непустые варианты ответов
         options = []
@@ -591,6 +611,8 @@ class ExamPanel(wx.Panel):
 
     def on_new_session(self, event):
         """Начало новой экзаменационной сессии"""
+        # Восстанавливаем все вопросы как доступные
+        self.available_question_ids = {q[0] for q in self.questions}
         self.asked_question_ids = set()  # Очищаем множество заданных вопросов
         self.load_question()  # Загружаем первый вопрос новой сессии
 
